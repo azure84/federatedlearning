@@ -10,6 +10,13 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 import torchvision.datasets as dsets
 torch.backends.cudnn.benchmark=True
+import math
+
+def gaussian_noise(data_shape, clip_constant, sigma, device=None):
+    """
+    Gaussian noise
+    """
+    return torch.normal(0, sigma * clip_constant, data_shape).to(device)
 
 
 class CNN(torch.nn.Module):
@@ -47,20 +54,40 @@ class CNN(torch.nn.Module):
         return out
 
 
-def client_update(client_model, optimizer, train_loader, epoch=5):
+def client_update(client_model, optimizer, train_loader, epoch=1):
     """
     This function updates/trains client model on client data
     """
     model.train() # model for training
     criterion = torch.nn.CrossEntropyLoss().to(device)  
     for e in range(epoch):
-        for batch_idx, (data, target) in enumerate(train_loader): 
-            data, target = data.to(device) , target.to(device) 
-            optimizer.zero_grad()
-            output = client_model(data)
-            loss = criterion(output, target)
-            loss.backward()
-            optimizer.step()
+    	clipped_grads = {name: torch.zeros_like(param) for name, param in client_model.named_parameters()}
+    	for batch_idx, (data, target) in enumerate(train_loader):
+    		data, target = data.to(device) , target.to(device) 
+    		optimizer.zero_grad()
+    		output = client_model(data)
+    		loss = criterion(output, target)
+    		loss.backward(retain_graph=True)
+    		torch.nn.utils.clip_grad_norm_(client_model.parameters(), max_norm=clip_constant)
+    		
+    		for name, param in client_model.named_parameters():
+    			clipped_grads[name] += param.grad 
+    		#client_model.zero_grad()
+    		
+    		
+    		for name, param in client_model.named_parameters():
+    			clipped_grads[name] += gaussian_noise(clipped_grads[name].shape, clip_constant, sigma, device)
+    		for name, param in client_model.named_parameters():
+    			clipped_grads[name]/=batch_size  
+    		for name, param in model.named_parameters():
+    			param.grad = clipped_grads[name]
+    		      
+    		optimizer.step()
+
+            #print(loss.size()[0])
+            #for name, param in model.named_parameters():
+            #	print("name:",name,"param:",param.grad)
+
     return loss.item()
 
 
@@ -68,13 +95,20 @@ def server_aggregate(global_model, client_models):
     """
     This function has aggregation method 'mean'
     """
+    #clipped_grads = {name: torch.zeros_like(param) for name, param in global_model.named_parameters()}
+    #torch.nn.utils.clip_grad_norm_(global_model.parameters(), max_norm=clip_constant)
     global_dict = global_model.state_dict() #current model parameter 
-
     for k in global_dict.keys(): #iterate for whole model parameter
     #stack the entire client model parameter and average the parameter value for global model
+    	#print(len(global_dict[k]))
+    	#print(k)
+    	#print(global_dict[k])
     	global_dict[k] = torch.stack([client_models[i].state_dict()[k].float() for i in range(len(client_models))], 0).mean(0)
+    #	global_dict[k] += gaussian_noise(global_dict[k].shape, clip_constant, sigma, device)
     #update the global model parameter
     global_model.load_state_dict(global_dict)
+    
+
 
     #update the client model parameter
     for model in client_models:
@@ -108,8 +142,11 @@ num_selected = 6
 num_rounds = 150
 epochs = 5
 batch_size = 25
-
+clip_constant=1
+epsilon=0.1
+delta=1E-7
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+sigma=math.sqrt(2*math.log(1.25/delta)/epsilon)
 
 # random seed fix
 torch.manual_seed(777)
