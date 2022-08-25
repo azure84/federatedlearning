@@ -11,6 +11,7 @@ from torchvision import datasets, transforms
 import torchvision.datasets as dsets
 torch.backends.cudnn.benchmark=True
 import math
+import matplotlib.pyplot as plt
 
 def gaussian_noise(data_shape, clip_constant, sigma, device=None):
     """
@@ -54,7 +55,7 @@ class CNN(torch.nn.Module):
         return out
 
 
-def client_update(client_model, optimizer, train_loader, epoch=1):
+def client_update(client_model, optimizer, train_loader, epoch):
     """
     This function updates/trains client model on client data
     """
@@ -75,14 +76,13 @@ def client_update(client_model, optimizer, train_loader, epoch=1):
     		#client_model.zero_grad()
     		
     		
-		for name, param in client_model.named_parameters(): #current gradient+gaussain_noise
-			clipped_grads[name] += gaussian_noise(clipped_grads[name].shape, clip_constant, sigma, device)
-		for name, param in client_model.named_parameters(): 
-			clipped_grads[name]/=batch_size  
-		for name, param in model.named_parameters(): #allocation of noised gradient to model gradient
-			param.grad = clipped_grads[name]
-		      
-		optimizer.step()
+    	for name, param in client_model.named_parameters():	#current gradient+gaussain_noise
+    		clipped_grads[name] += gaussian_noise(clipped_grads[name].shape, clip_constant, sigma, device)
+    	for name, param in client_model.named_parameters(): 
+    		clipped_grads[name]/=batch_size  
+    	for name, param in model.named_parameters(): #allocation of noised gradient to model gradient
+    		param.grad = clipped_grads[name]
+    	optimizer.step()
 
             #print(loss.size()[0])
             #for name, param in model.named_parameters():
@@ -114,7 +114,7 @@ def test(global_model, test_loader):
     model.eval() # model for testing
     test_loss = 0
     correct = 0
-    criterion = torch.nn.CrossEntropyLoss(reduction='sum').to(device)  
+    criterion = torch.nn.CrossEntropyLoss().to(device)  
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device) , target.to(device) 
@@ -133,11 +133,10 @@ def test(global_model, test_loader):
 ##### Hyperparameters for federated learning #########
 num_clients = 20
 num_selected = 6
-num_rounds = 150
 epochs = 5
-batch_size = 25
-clip_constant=1
-epsilon=0.1
+batch_size = 50
+clip_constant=8
+epsilon=1
 delta=1E-7
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 sigma=math.sqrt(2*math.log(1.25/delta)/epsilon)
@@ -150,13 +149,18 @@ if device == 'cuda':
     torch.cuda.manual_seed_all(777)
 
 #learning_rate = 0.001	
-training_epochs = 15
+training_epochs = 3
 
 
 traindata = dsets.MNIST(root='MNIST_data/', # download path
                           train=True, # True=training data download
                           transform=transforms.ToTensor(), # transform to tensor
                           download=True)
+testdata = dsets.MNIST(root='MNIST_data/', 
+                         train=False, # False=test data download
+                         transform=transforms.ToTensor(), 
+                         download=True)
+
 
 # Dividing the training data into num_clients, with each client having equal number of images
 traindata_split = torch.utils.data.random_split(traindata, [int(traindata.data.shape[0] / num_clients) for _ in range(num_clients)])
@@ -165,9 +169,10 @@ traindata_split = torch.utils.data.random_split(traindata, [int(traindata.data.s
 train_loader = [torch.utils.data.DataLoader(dataset=x, batch_size=batch_size, shuffle=True) for x in traindata_split]
 
 #loading the data for testing
-test_loader = torch.utils.data.DataLoader(
-        dsets.MNIST('MNIST_data/', train=False, transform=transforms.Compose([transforms.ToTensor()])
-        ), batch_size=batch_size, shuffle=True)
+test_loader = torch.utils.data.DataLoader(dataset=testdata,
+                                          batch_size=batch_size,
+                                          shuffle=True,
+                                          drop_last=True) #when the last batch is less than batch size, loader do not use last batch data
 
 
 global_model =  CNN().to(device)
@@ -183,7 +188,7 @@ for model in client_models:
     model.load_state_dict(global_model.state_dict()) ### initial synchronizing with global model 
 
 #optimizer
-opt = [optim.Adam(model.parameters(), lr=0.01) for model in client_models]
+opt = [optim.Adam(model.parameters(), lr=0.001) for model in client_models]
 
 
 for epoch in range(training_epochs):
@@ -199,3 +204,16 @@ for epoch in range(training_epochs):
     acc_test.append(acc)
     print('%d-th round' % epoch)
     print('average train loss %0.3g | test loss %0.3g | test acc: %0.3f' % (loss / num_selected, test_loss, acc))
+
+plt.title('Accurcy',fontsize=20)
+plt.ylabel('Accuracy',fontsize=14)
+plt.xlabel('Number of Epoch',fontsize=14)
+plt.xticks(range(training_epochs))
+plt.plot(range(training_epochs), acc_test, label='Accuracy', color='darkred')
+plt.show()
+
+dataiter = iter(test_loader)
+images, labels = dataiter.next()
+outputs = model(images)
+_, predicted = torch.max(outputs, 1)
+print('Predicted:', predicted, 'Labels:',labels)
