@@ -1,4 +1,3 @@
-
 import os
 import random
 from tqdm import tqdm
@@ -149,7 +148,7 @@ if device == 'cuda':
     torch.cuda.manual_seed_all(777)
 
 #learning_rate = 0.001	
-training_epochs = 3
+training_epochs = 10
 
 
 traindata = dsets.MNIST(root='MNIST_data/', # download path
@@ -214,6 +213,6 @@ plt.show()
 
 dataiter = iter(test_loader)
 images, labels = dataiter.next()
-outputs = model(images)
+outputs = global_model(images.to(device))
 _, predicted = torch.max(outputs, 1)
 print('Predicted:', predicted, 'Labels:',labels)
