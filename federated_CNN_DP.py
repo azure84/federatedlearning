@@ -195,7 +195,7 @@ for epoch in range(training_epochs):
     loss = 0
     client_idx = np.random.(permutationnum_clients)[:num_selected] #random permutation for client selection
     for i in tqdm(range(num_selected)):
-        loss += client_update(client_models[client_idx[i]], opt[i], train_loader[client_idx[i]], epoch=epochs)
+        loss += client_update(client_models[client_idx[i]], opt[client_idx[i]], train_loader[client_idx[i]], epoch=epochs)
     losses_train.append(loss)
 
     server_aggregate(global_model, client_models)
