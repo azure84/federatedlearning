@@ -1,3 +1,4 @@
+
 import os
 import random
 from tqdm import tqdm
@@ -148,7 +149,7 @@ if device == 'cuda':
     torch.cuda.manual_seed_all(777)
 
 #learning_rate = 0.001	
-training_epochs = 10
+training_epochs = 3
 
 
 traindata = dsets.MNIST(root='MNIST_data/', # download path
@@ -192,9 +193,9 @@ opt = [optim.Adam(model.parameters(), lr=0.001) for model in client_models]
 
 for epoch in range(training_epochs):
     loss = 0
-    client_idx = np.random.permutation(num_clients)[:num_selected] #random permutation for client selection
+    client_idx = np.random.(permutationnum_clients)[:num_selected] #random permutation for client selection
     for i in tqdm(range(num_selected)):
-        loss += client_update(client_models[i], opt[i], train_loader[client_idx[i]], epoch=epochs)
+        loss += client_update(client_models[client_idx[i]], opt[i], train_loader[client_idx[i]], epoch=epochs)
     losses_train.append(loss)
 
     server_aggregate(global_model, client_models)
@@ -213,6 +214,6 @@ plt.show()
 
 dataiter = iter(test_loader)
 images, labels = dataiter.next()
-outputs = global_model(images.to(device))
+outputs = model(images)
 _, predicted = torch.max(outputs, 1)
 print('Predicted:', predicted, 'Labels:',labels)
